@@ -55,7 +55,7 @@ train1 = training1[inTrain,]
 Preprocessing
 ---------------------------------------------------------------------------------
 
-One side benefit of removing columns during data exploration is that we end up with a data set without missing data, and consisting only of numerical data.  Normalization is handled a part or training.  The data set does not include near-zero-variables, and while there are highly correlated variables, there is no a uge amount of them.
+One side benefit of removing columns during data exploration is that we end up with a data set without missing data (which was not the case to begin with), and consisting only of numerical data.  Normalization is handled as part or training.  The data set does not include near-zero-variables, and while there are highly correlated variables, there is no a uge amount of them.
 
 I spent some time experimenting with PCA but the experiment did not yield very high quality predictors, as illustrated in the plot below.  The 2 most critical PCA components plotted against each other do not succeed in separating the classes. 
 
@@ -70,32 +70,45 @@ featurePlot(x=pca1, y=train1$classe, plot="pairs")
 Model selection
 ---------------------------------------------------------------------------------
 
-So here I am not going to bore you too much with how I arrived at the conclusion that using boosting provided a vastly better accuracy on the training set.  In the process, I tried what feels like a large number of them to the chagrin of my overheating laptop.  All this despite the fact that the first line of the lecture notes on boosting is
+I am not going to bore you too much with how I arrived at the conclusion that using boosting provided a vastly better accuracy.  In the process, I tried what feels like a large number of classifiers to the chagrin of my overheating laptop.  All this despite the fact that the first line of the lecture notes on boosting is
 
 > 1. Take lots of (possibly) weak predictors
 
-And what we have is precisely a set of 53 week predictors, as shown by the results of an initial decision tree prediction attempt: a 55% accuracy rate.
+And what we have is precisely a set of 52 week predictors, as shown by the results of an initial decision tree prediction attempt: a 55% accuracy rate.
 
 ```{r}
 treefit = train(classe ~ ., method="rpart", preProcess=c("center","scale"), data=train1)
 confusionMatrix(predict(treefit, newdata=cv1), cv1$classe)
 treefit$finalModel
 ```
+A look at the tree model above shows that several leaf nodes, especially for classes B, C, D do not lead to high accuracy.
 
-Warning: This steps takes a really long time.  It took 20 minutes on my laptop, even when swapping train1 and cv1 in order to use the smaller subset and make it a little more acceptable timewise to the reviewer.  I did make sure the results where equivalent.
+Fortunately, much better results are obtained using boosting with trees (gbm).
+
+Warning: This steps takes a really long time.  It took 20 minutes on my fairly recent laptop.  It may be sufficient to use a smaller subset but I'd need more time to determine at what point it would start impacting prediction quality.
 
 ```{r}
-fit = train(classe ~ ., method="gbm", preProcess=c("center","scale"), data=cv1, verbose=FALSE)
-confusionMatrix(predict(fit, newdata=train1), train1$classe)
+date()
+fit = train(classe ~ ., method="gbm", preProcess=c("center","scale"), data=train1, verbose=FALSE)
+date()
+confusionMatrix(predict(fit, newdata=cv1), cv1$classe)
 ```
+
+The 96% accuracy is achieved for a tree depth of 3 and 150 iterations.
+```{r}
+plot(fit)
+```
+
 
 
 Prediction
 ---------------------------------------------------------------------------------
 
+The following is the prediction vector for the test set, using the model created above.
 ```{r}
 submission = predict(fit, newdata=testing1)
 submission
 ```
-produces a vector to be compared with the actual test data set classes.
+
+The validation set model accuracy is in the order of 95% (19 out of 20 correct).  The test data set may have a bias so the stated accuracy is really an upper bound for the test set accuracy.  More importantly, It should noted that the test set is very small, and therefore subject to high variance.  This means a sizeable margin of error should be applied.  I'd question whether a test set of 20 suffices in assessing the quality of the model.
 
