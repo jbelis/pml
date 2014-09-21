@@ -1,0 +1,101 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Jacques Belissent"
+date: "September 21, 2014"
+output: html_document
+---
+
+
+Data exploration
+---------------------------------------------------------------------------------
+
+(make sure you change the directory to that where the data has been extracted, using setwd())
+```{r}
+setwd("/Users/jbelis/Documents/pml")
+training = read.csv("pml-training.csv")
+testing = read.csv("pml-testing.csv")
+library(caret)
+```
+
+A number of variables are never available in the test data set.  We therefore generate a new training data set excluding these variables.
+
+```{r}
+useful_cols = sapply(testing, function(x) !all(is.na(x)))
+```
+
+In addition to these columns, we exclude the following columns that have no prediction value:
+- X : test index, assumed to be artifically correlated with the class variable
+- user_name : uncorrelated, assuming any correlation would be artificial
+- raw_timestamp_part_1 : discrete timestamp
+- raw_timestamp_part_2 : integer with stable distribution
+- cvtd_timestamp : discrete date/time
+- new_window : constant in test set
+- num_window : integer assumed to be artifically correlated with the class variable
+
+So the data sets are hereby reduced:
+```{r}
+useful_cols[1:7] = FALSE
+training1 = training[,useful_cols]
+testing1 = testing[,useful_cols]
+```
+
+
+Dataset Slicing
+---------------------------------------------------------------------------------
+
+The test data does not include the class variable.  We therefore have to split the training set into training and model validation data sets, by setting out 30% of records for validation
+
+```{r}
+set.seed(123)
+inTrain = createDataPartition(y=training1$classe, p=.7, list=FALSE)
+cv1 = training1[-inTrain,]
+train1 = training1[inTrain,]
+```
+
+Preprocessing
+---------------------------------------------------------------------------------
+
+One side benefit of removing columns during data exploration is that we end up with a data set without missing data, and consisting only of numerical data.  Normalization is handled a part or training.  The data set does not include near-zero-variables, and while there are highly correlated variables, there is no a uge amount of them.
+
+I spent some time experimenting with PCA but the experiment did not yield very high quality predictors, as illustrated in the plot below.  The 2 most critical PCA components plotted against each other do not succeed in separating the classes. 
+
+```{r}
+preProc = preProcess(train1[,-53], method="pca", pcaComp=2)
+pca1 = predict(preProc, train1[,-53])
+featurePlot(x=pca1, y=train1$classe, plot="pairs")
+```
+
+
+
+Model selection
+---------------------------------------------------------------------------------
+
+So here I am not going to bore you too much with how I arrived at the conclusion that using boosting provided a vastly better accuracy on the training set.  In the process, I tried what feels like a large number of them to the chagrin of my overheating laptop.  All this despite the fact that the first line of the lecture notes on boosting is
+
+> 1. Take lots of (possibly) weak predictors
+
+And what we have is precisely a set of 53 week predictors, as shown by the results of an initial decision tree prediction attempt: a 55% accuracy rate.
+
+```{r}
+treefit = train(classe ~ ., method="rpart", preProcess=c("center","scale"), data=train1)
+confusionMatrix(predict(treefit, newdata=cv1), cv1$classe)
+treefit$finalModel
+```
+
+Warning: This steps takes a really long time.  It took 20 minutes on my laptop, even when swapping train1 and cv1 in order to use the smaller subset and make it a little more acceptable timewise to the reviewer.  I did make sure the results where equivalent.
+
+```{r}
+fit = train(classe ~ ., method="gbm", preProcess=c("center","scale"), data=cv1, verbose=FALSE)
+confusionMatrix(predict(fit, newdata=train1), train1$classe)
+```
+
+
+Prediction
+---------------------------------------------------------------------------------
+
+```{r}
+submission = predict(fit, newdata=testing1)
+submission
+```
+produces a vector to be compared with the actual test data set classes.
+
